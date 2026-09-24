@@ -1,4 +1,4 @@
-# IoT Device Vulnerability Scanner
+# IoT Device Vulnerability 
 
 A first-year project that builds a small IoT sensor network and a companion vulnerability scanner to detect common security weaknesses in connected devices — inspired by real-world IoT threats such as the Mirai botnet and its modern variants.
 
