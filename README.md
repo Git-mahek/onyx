@@ -20,7 +20,7 @@ The simulated IoT environment consists of three sensor nodes, each built on a mi
 | Node 1 | Temperature & Humidity Sensor (e.g., DHT11/DHT22, BME280) | Environmental monitoring |
 | https://randomnerdtutorials.com/esp32-dht11-dht22-temperature-humidity-web-server-arduino-ide/ |
 | Node 2 | PIR Motion Sensor (e.g., HC-SR501) | Motion/presence detection |
-| https://esp32io.com/tutorials/esp32-motion-sensor |
+| https://esp32io.com/tutorials/esp32-motion-sensor | https://app.cirkitdesigner.com/project/95e88f12-7a12-47e9-9003-ca2fc88e448d |
 | Node 3 | Water Level Sensor | Liquid level monitoring |
 | https://esp32io.com/tutorials/esp32-water-sensor | https://app.cirkitdesigner.com/project/32d99c7d-f008-4fb3-ab8b-2d0210c22979 |
 
