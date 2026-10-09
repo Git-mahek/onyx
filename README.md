@@ -18,8 +18,14 @@ The simulated IoT environment consists of three sensor nodes, each built on a mi
 | Node | Sensor | Purpose |
 |---|---|---|
 | Node 1 | Temperature & Humidity Sensor (e.g., DHT11/DHT22, BME280) | Environmental monitoring |
+| https://randomnerdtutorials.com/esp32-dht11-dht22-temperature-humidity-web-server-arduino-ide/ |
+
 | Node 2 | PIR Motion Sensor (e.g., HC-SR501) | Motion/presence detection |
+| https://esp32io.com/tutorials/esp32-motion-sensor |
+
 | Node 3 | Water Level Sensor | Liquid level monitoring |
+| https://esp32io.com/tutorials/esp32-water-sensor |
+| https://app.cirkitdesigner.com/project/32d99c7d-f008-4fb3-ab8b-2d0210c22979 |
 
 Each node communicates over Wi-Fi using common IoT protocols (HTTP/MQTT), representing typical low-power, resource-constrained IoT devices — the same category of devices frequently targeted by real-world IoT attacks.
 
@@ -40,9 +46,7 @@ Evaluates how resilient a node is to resource exhaustion, given the limited proc
 
 The scanner combines findings from each check into a per-device risk report. Vulnerabilities are not scored in isolation — for example, an open port paired with weak authentication is flagged as significantly higher risk than an open port with strong authentication, reflecting how vulnerabilities compound in practice.
 
-##  Motivation
-
-Despite being nearly a decade old, the vulnerability classes exploited by the original Mirai botnet (2016) — open ports, default/weak credentials, and resulting DoS capability — remain highly active today:
+##  Cyber attacks incidents
 
 - **Mirai (2016):** Compromised ~600,000 IoT devices via open Telnet ports and hardcoded default credentials, powering some of the largest DDoS attacks recorded at the time.
 - **Gayfemboy (2024–2025):** A Mirai-derived botnet still exploiting weak Telnet credentials alongside newer N-day/zero-day vulnerabilities, infecting 15,000+ devices daily.
