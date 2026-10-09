@@ -69,7 +69,7 @@ These recent incidents demonstrate that the vulnerabilities this project targets
 
 This project is developed strictly for **educational purposes** as part of a first-year academic project. The scanner is intended to be run only against the project's own sensor node environment or systems the user has explicit authorization to test. Do not use this tool against any network or device without permission.
 
-## 👤 Developers
+## Developers
 - Mahek Mehta 
 - Nena Shah 
 - Alluru Ruthvik Sai
