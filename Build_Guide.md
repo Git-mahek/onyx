@@ -107,8 +107,8 @@ This is the "attacker's-eye view" half of the project — it probes the same sys
 
 | Module | What it checks | Status |
 |---|---|---|
-| **Open ports** | Scans for open/unexpected ports and services (`socket`, `python-nmap`); compares against an allowlist per node | Built |
-| **Weak/default authentication** | Tests whether open services (HTTP, MQTT, Telnet) accept no login or a well-known default credential | Built (`auth_check.py`) |
+| **Open ports** | Scans for open/unexpected ports and services (`socket`, `python-nmap`); compares against an allowlist per node | Planned, Week 1 |
+| **Weak/default authentication** | Tests whether open services (HTTP, MQTT, Telnet) accept no login or a well-known default credential | Planned, Week 2, (`auth_check.py`) |
 | **DoS / flooding** | Sends a controlled, rate-limited, time-boxed flood against a service and measures response degradation — **never run uncontrolled against real hardware** | Planned, Week 4 |
 | **Data spoofing** | Verifies each message's HMAC signature to catch forged or tampered readings; checks timestamp/node ID to catch replay attacks | Planned, Week 5 |
 
