@@ -17,8 +17,8 @@ Mosquitto broker (TLS-only, self-signed cert)
 Python/Flask server
    ├─ Rate limiting (caps messages per device)
    ├─ 3-tier plausibility check (impossible / unusual / normal)
-   ├─ Vulnerability scanner (4 parallel checks)
-   ├─ Risk aggregation (combines the 4 checks into a per-device score)
+   ├─ Vulnerability scanner (port scan + auth check, DoS check)
+   ├─ Risk aggregation (combines both checks into a per-device score)
    └─ Admin-only audit log
    │
    ▼
@@ -28,7 +28,7 @@ MySQL database (readings + audit log)
 Live dashboard (Flask + Chart.js, admin-protected)
 ```
 
-The project has two halves that run in parallel: **the thing being protected** (sensor nodes → broker → server → database → dashboard) and **the thing that protects it** (the 4-module vulnerability scanner). We're building and demonstrating both — insecure first, then with fixes applied.
+The project has two halves that run in parallel: **the thing being protected** (sensor nodes → broker → server → database → dashboard) and **the thing that protects it** (the vulnerability scanner). We're building and demonstrating both — insecure first, then with fixes applied.
 
 ---
 
@@ -74,12 +74,11 @@ Every sensor reading is a JSON object with these fields:
   "sensor_type": "water",
   "value": 2048,
   "unit": "raw_adc",
-  "timestamp": 1733900000,
-  "hmac": "a3f9...(added in Week 3/5)"
+  "timestamp": 1733900000
 }
 ```
 
-**This schema doesn't change once agreed.** Every later module — the plausibility check, the spoof check, the audit log, the dashboard — reads this exact shape. If it needs to change, the whole team needs to know before anyone's code breaks on it.
+**This schema doesn't change once agreed.** Every later module — the plausibility check, the audit log, the dashboard — reads this exact shape. If it needs to change, the whole team needs to know before anyone's code breaks on it.
 
 Topic naming: `sensors/<type>/<node_id>` — e.g. `sensors/water/node1`.
 
@@ -97,40 +96,28 @@ A Python script subscribes to the broker (`paho-mqtt`, `tls_set()`) and, for eac
 3. **Storage** — verified readings go into MySQL
 4. **Audit log** — every stored/flagged/rejected event is logged, viewable only by an authenticated admin on the dashboard
 
-Note the division of labor: HMAC (see §7) proves a reading *came from a legitimate node and wasn't altered in transit*. The plausibility check catches a *legitimate* node sending a *bad* value (sensor fault, miscalibration). They solve different problems — don't conflate them in the report.
-
 ---
 
-## 6. The vulnerability scanner — 4 parallel modules
+## 6. The vulnerability scanner — 2 modules
 
 This is the "attacker's-eye view" half of the project — it probes the same system from outside, the way a real attacker would.
 
 | Module | What it checks | Status |
 |---|---|---|
-| **Open ports** | Scans for open/unexpected ports and services (`socket`, `python-nmap`); compares against an allowlist per node | Planned, Week 1 |
-| **Weak/default authentication** | Tests whether open services (HTTP, MQTT, Telnet) accept no login or a well-known default credential | Planned, Week 2, (`auth_check.py`) |
+| **Port scan + auth check** | Scans for open/unexpected ports and services (`socket`, `python-nmap`), compares against an allowlist per node, and tests whether open services (HTTP, MQTT, Telnet) accept no login or a well-known default credential | Built (`auth_check.py`; port scan to be merged in) |
 | **DoS / flooding** | Sends a controlled, rate-limited, time-boxed flood against a service and measures response degradation — **never run uncontrolled against real hardware** | Planned, Week 4 |
-| **Data spoofing** | Verifies each message's HMAC signature to catch forged or tampered readings; checks timestamp/node ID to catch replay attacks | Planned, Week 5 |
 
-All four modules output the same `Finding` shape — `host, port, service, issue, severity, detail` — so results can be merged into one report regardless of which module found them.
-
----
-
-## 7. HMAC signing (the spoofing defense)
-
-Each node computes `HMAC(value + timestamp + node_id, shared_secret)` and sends it alongside the reading. HMAC proves authenticity and integrity — **it does not encrypt the data**; that's TLS's job (§3). The two are separate layers solving separate problems, and the report should be explicit about this distinction.
-
-The server recomputes the HMAC on receipt and compares (`hmac.compare_digest`, never `==`, to avoid timing attacks). A mismatch means the data was altered or forged.
+Both modules output the same `Finding` shape — `host, port, service, issue, severity, detail` — so results can be merged into one report regardless of which module found them.
 
 ---
 
-## 8. Risk aggregation
+## 7. Risk aggregation
 
-The 4 scanner modules' findings are combined into a single per-device risk score. Severity isn't just the worst single finding — combinations matter: an open port *plus* a working default login rates higher than either alone, since that's a directly exploitable path (this is the exact pattern Mirai used).
+Both scanner modules' findings are combined into a single per-device risk score. Severity isn't just the worst single finding — combinations matter: an open port *plus* a working default login rates higher than either alone, since that's a directly exploitable path (this is the exact pattern Mirai used).
 
 ---
 
-## 9. Dashboard
+## 8. Dashboard
 
 Flask + Chart.js, reading from MySQL (not talking to the sensors directly). Shows:
 - Live sensor readings per node
@@ -140,7 +127,7 @@ Flask + Chart.js, reading from MySQL (not talking to the sensors directly). Show
 
 ---
 
-## 10. Real-world grounding (for the report/presentation)
+## 9. Real-world grounding (for the report/presentation)
 
 Every vulnerability category above maps to a real incident:
 
@@ -153,21 +140,20 @@ Full citations are in the project README's Sources section — keep the two docu
 
 ---
 
-## 11. Build order (why it's sequenced this way)
+## 10. Build order (why it's sequenced this way)
 
 1. **Hardware + message format** — nothing else works until nodes can send a reading in the agreed shape
 2. **Logging + dashboard** — get data visible early, so every later module has something real to check
-3. **Open ports + HMAC** — the two simplest, most independent scanner pieces
+3. **Port scan + auth check** — merge the two into one module
 4. **DoS** — needs a stable target to test against safely
-5. **Spoofing** — needs HMAC (step 3) already in place on both ends
-6. **Merge 4 modules** — the highest-risk integration step; don't start it before the pieces it merges actually work individually
-7. **Scoring system** — needs all 4 modules producing real findings to score against
+5. **Merge into the full scanner** — combine both modules behind one CLI, with a shared result format
+6. **Scoring system** — needs both modules producing real findings to score against
 
 ---
 
-## 12. Known limitations
+## 11. Known limitations
 
 - Open ports and weak authentication are tested; the HTTP check only probes one path (`/`) by default
 - The DoS module measures degradation, not a true production-scale attack — by design, to avoid breaking our own hardware
-- HMAC does not provide confidentiality (TLS does) — don't present it as encryption
 - The plausibility check's thresholds are heuristic, not based on formal sensor-fault modeling
+- Data spoofing / message integrity (HMAC signing) is **not** part of this build — messages are protected in transit by TLS, but a compromised or malicious node's data is not independently verified
