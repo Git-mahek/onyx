@@ -1,0 +1,17 @@
+# Local test stack: TLS Mosquitto + MySQL. Run ./gen_certs.sh first.
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports: ["127.0.0.1:8883:8883"]
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./certs:/mosquitto/certs:ro
+
+  mysql:
+    image: mysql:8
+    ports: ["127.0.0.1:3306:3306"]
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_DATABASE: sensors
+      MYSQL_USER: sensor
+      MYSQL_PASSWORD: sensorpw
