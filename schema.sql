@@ -33,3 +33,14 @@ CREATE TABLE IF NOT EXISTS audit_log (
   PRIMARY KEY (id),
   KEY idx_node_ts (node_id, ts)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- device_risk: one row per device, holding its current risk rating.
+-- Upsert on each scan (INSERT ... ON DUPLICATE KEY UPDATE).
+CREATE TABLE IF NOT EXISTS device_risk (
+  node_id       VARCHAR(32)  NOT NULL,
+  score         FLOAT        NOT NULL COMMENT 'overall risk score',
+  severity      VARCHAR(16)  NOT NULL COMMENT 'LOW | MEDIUM | HIGH | CRITICAL (same values as Finding.severity)',
+  last_scanned  DATETIME     NOT NULL COMMENT 'time of last scan, UTC',
+  PRIMARY KEY (node_id),
+  KEY idx_severity (severity)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
