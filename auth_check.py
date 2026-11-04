@@ -26,7 +26,9 @@ import json
 import socket
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
+
+from findings import Finding
 
 # Keep this list short. Widening it turns the tool into a brute-forcer.
 DEFAULT_CREDENTIALS = [
@@ -41,18 +43,6 @@ DEFAULT_CREDENTIALS = [
 ]
 DELAY_BETWEEN_ATTEMPTS = 1.0  # seconds
 TIMEOUT = 3.0  # seconds
-
-
-@dataclass
-class Finding:
-    """Same shape as the open-port module so the final report can merge them."""
-
-    host: str
-    port: int
-    service: str
-    issue: str
-    severity: str  # LOW / MEDIUM / HIGH / CRITICAL
-    detail: str = ""
 
 
 def require_private(host):
