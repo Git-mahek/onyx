@@ -18,14 +18,23 @@ Usage:
     python mqtt_fake_sensors.py --host localhost
     python mqtt_fake_sensors.py --interval 0.5 --speed 60      # accelerated sim time
     python mqtt_fake_sensors.py --count 20 --seed 1            # deterministic, finite
+
+Bad-data scenarios (live demo of the subscriber's screening):
+    python mqtt_fake_sensors.py --scenario humidity_spike              # fires on round 3
+    python mqtt_fake_sensors.py --scenario temp_jump --scenario-at 5   # fires on round 5
+    python mqtt_fake_sensors.py --interactive                          # type a name + Enter to fire it live
+    Scenarios: humidity_spike, temp_impossible (rejected) | temp_jump, water_jump (flagged) | flood (rate_limited)
+    Fires are one-shot: the sim state is untouched, so the next round is normal again.
 """
 import argparse
 import json
 import math
+import queue
 import random
 import signal
 import ssl
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -121,6 +130,40 @@ class TempSim:
         }
 
 
+# -------------------------------------------------------------- SCENARIOS
+# Bad-data scenarios for live demos. name -> (sensor kind, mutate(payload) -> payload, extra copies).
+# The comment on each line is the tier screening.py should give it (thresholds: screening.py).
+# Jump scenarios need a baseline reading first, hence --scenario-at defaults to round 3.
+def _water_jump(p):
+    pct = p["level_pct"]
+    new = round(pct - 45 if pct >= 50 else pct + 45, 1)  # |delta| 45 > JUMP_LIMITS["level_pct"] 40
+    return {**p, "level_pct": new, "level_cm": new}       # TANK_CM is 100, so cm == pct
+
+
+FLOOD_COPIES = 30  # extra messages in one burst; subscriber default limit is 20 per node per 10 s
+
+SCENARIOS = {
+    "humidity_spike": ("temp", lambda p: {**p, "humidity_pct": 120.0}, 0),   # impossible -> rejected
+    "temp_impossible": ("temp", lambda p: {**p, "temperature_c": 85.0}, 0),  # impossible -> rejected
+    "temp_jump": ("temp", lambda p: {**p, "temperature_c": round(p["temperature_c"] + 20, 2)}, 0),  # unusual -> flagged
+    "water_jump": ("water", _water_jump, 0),                                 # unusual -> flagged
+    "flood": ("temp", lambda p: p, FLOOD_COPIES),                            # rate_limited
+}
+
+
+def watch_stdin(pending):
+    """Demo trigger: type a scenario name + Enter; it fires on the next round."""
+    for line in sys.stdin:
+        name = line.strip().lower()
+        if not name:
+            continue
+        if name in SCENARIOS:
+            pending.put(name)
+            print(f"[queued] {name}", file=sys.stderr)
+        else:
+            print(f"[unknown] {name!r}; choose from: {', '.join(sorted(SCENARIOS))}", file=sys.stderr)
+
+
 # ------------------------------------------------------------------- MAIN
 def make_client(args):
     try:  # paho-mqtt >= 2.0
@@ -158,7 +201,16 @@ def main():
     ap.add_argument("--retain", action="store_true")
     ap.add_argument("--seed", type=int, help="seed RNG for reproducible runs")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--scenario", action="append", choices=sorted(SCENARIOS), metavar="NAME",
+                    help="fire a bad-data scenario (repeatable): " + ", ".join(sorted(SCENARIOS)))
+    ap.add_argument("--scenario-at", type=int, default=3, metavar="ROUND",
+                    help="round (0-based) on which --scenario fires; rounds before it give the "
+                         "subscriber a baseline for jump checks (default 3)")
+    ap.add_argument("--interactive", action="store_true",
+                    help="read scenario names from stdin while running (for live demos)")
     args = ap.parse_args()
+    if args.scenario and args.count and args.scenario_at >= args.count:
+        ap.error("--scenario-at must be smaller than --count, or the scenario never fires")
 
     rng = random.Random(args.seed)
     sims = {"water": WaterSim(rng), "pir": PirSim(rng), "temp": TempSim(rng)}
@@ -176,16 +228,35 @@ def main():
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
 
+    pending = queue.SimpleQueue()  # scenarios typed in --interactive mode
+    if args.interactive:
+        threading.Thread(target=watch_stdin, args=(pending,), daemon=True).start()
+        print(f"interactive: type a scenario ({', '.join(sorted(SCENARIOS))}) + Enter", file=sys.stderr)
+
     sim_time = time.time()
     dt = args.interval * args.speed
     sent = 0
     while running and (args.count == 0 or sent < args.count):
+        active = list(args.scenario or []) if sent == args.scenario_at else []
+        while not pending.empty():
+            active.append(pending.get_nowait())
+        active = list(dict.fromkeys(active))  # each scenario at most once per round
+        for name in active:
+            print(f"[scenario] {name} fires on round {sent}", file=sys.stderr)
+
         for kind, sim in sims.items():
             payload = {**envelope(kind, sim_time), **sim.step(sim_time, dt)}
+            copies = 1
+            for name in active:
+                target, mutate, extra = SCENARIOS[name]
+                if target == kind:
+                    payload = mutate(payload)
+                    copies += extra
             topic = TOPICS[kind][0]
-            client.publish(topic, json.dumps(payload), qos=args.qos, retain=args.retain)
+            for _ in range(copies):
+                client.publish(topic, json.dumps(payload), qos=args.qos, retain=args.retain)
             if not args.quiet:
-                print(f"{topic} {json.dumps(payload)}")
+                print(f"{topic} {json.dumps(payload)}" + (f"  (x{copies})" if copies > 1 else ""))
         sent += 1
         sim_time += dt
         time.sleep(args.interval)
