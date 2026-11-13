@@ -1,6 +1,13 @@
-"""auth_check.py - inadequate-authentication checks for the IoT scanner.
+"""auth_check.py - open-port scan + inadequate-authentication checks.
 
-For every open service it is pointed at, this module asks three questions:
+One "port + auth" module. Two stages:
+  A. PORT SCAN: TCP connect scan of common IoT ports, identify the service on
+     each open port (banner / probe / port-number heuristic), and flag any
+     open port that is not on that host's allowlist ("Unexpected open port").
+  B. AUTH CHECKS: every discovered service we can test is passed straight into
+     check_http / check_mqtt / check_telnet.
+
+For every open service it is pointed at, the auth stage asks three questions:
   1. Does the service require authentication at all?
   2. Does it accept a well-known factory-default login?
   3. Are credentials sent over an unencrypted channel?
@@ -9,13 +16,19 @@ Supported services: http (Basic auth), mqtt (plain, port 1883), telnet.
 Uses only the Python standard library.
 
 !! Only run this against devices you own or are authorised to test. !!
-Guards built in: private/loopback addresses only, a short fixed credential
-list (this is a default-credential check, NOT a password cracker), and a
+Guards built in: private/loopback addresses only (scan AND auth stages), a
+short fixed credential list (this is a default-credential check, NOT a password cracker), and a
 delay between attempts so small devices (ESP32) are not hammered or locked out.
 
 Usage:
+    python auth_check.py --scan 192.168.1.101 --allowlist allowlist.json --out findings.json
     python auth_check.py --target 192.168.1.50:8080:http --target 192.168.1.50:1883:mqtt
     python auth_check.py --from-scan port_scan_results.json --out auth_findings.json
+
+allowlist.json maps each host to the ports it is SUPPOSED to expose, e.g.
+    {"192.168.1.101": [8883], "192.168.1.102": [8883]}
+A host missing from the file has an empty allowlist (default deny): every
+open port on it is reported.
 """
 
 import argparse
@@ -215,6 +228,110 @@ def check_telnet(host, port):
     return findings
 
 
+# ---------------------------------------------------------------- port scan
+# Common ports for IoT devices. Kept short on purpose: this is a connect scan
+# of our own devices, not a full-range sweep.
+COMMON_PORTS = [21, 22, 23, 80, 443, 554, 1883, 1880, 2323, 5683, 8000, 8080, 8081, 8443, 8883, 8888]
+SCAN_TIMEOUT = 0.5  # seconds per port
+SCAN_DELAY = 0.05  # seconds between ports, so small devices (ESP32) are not flooded
+BANNER_WAIT = 0.7  # seconds to listen for a banner the service sends by itself
+# Used only when a service gives us nothing to go on.
+PORT_NAMES = {21: "ftp", 22: "ssh", 23: "telnet", 2323: "telnet", 80: "http", 8080: "http",
+              8000: "http", 8081: "http", 8888: "http", 1880: "http", 443: "https", 8443: "https",
+              554: "rtsp", 1883: "mqtt", 8883: "mqtt-tls", 5683: "coap"}
+RISKY_SERVICES = {"telnet", "ftp"}  # cleartext remote-login services
+
+
+def scan_ports(host, ports=None):
+    """TCP connect scan. Returns the sorted list of open ports on host."""
+    require_private(host)
+    open_ports = []
+    for port in (COMMON_PORTS if ports is None else ports):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(SCAN_TIMEOUT)
+            if sock.connect_ex((host, port)) == 0:
+                open_ports.append(port)
+        time.sleep(SCAN_DELAY)
+    return sorted(open_ports)
+
+
+def _grab(host, port, probe=b""):
+    """Connect, optionally send a probe, return whatever the service says first."""
+    with socket.create_connection((host, port), timeout=TIMEOUT) as sock:
+        if probe:
+            sock.sendall(probe)
+        sock.settimeout(BANNER_WAIT)
+        try:
+            return sock.recv(256)
+        except socket.timeout:
+            return b""
+
+
+def identify_service(host, port):
+    """Name the service on an open port: banner first, then probes, then port number."""
+    require_private(host)
+    try:
+        banner = _grab(host, port)  # passive: telnet/ssh/ftp talk first
+        if banner[:1] == bytes([IAC]) or b"login:" in banner.lower():
+            return "telnet"
+        if banner.startswith(b"SSH-"):
+            return "ssh"
+        if banner.startswith(b"220"):
+            return "ftp"
+        if banner.startswith(b"HTTP/"):
+            return "http"
+        if not banner:  # silent service: HTTP and MQTT wait for the client
+            if _grab(host, port, b"HEAD / HTTP/1.0\r\n\r\n").startswith(b"HTTP/"):
+                return "http"
+            try:
+                _mqtt_connect(host, port)  # valid CONNACK reply = MQTT broker
+                return "mqtt"
+            except (ValueError, OSError):
+                pass
+    except OSError:
+        pass
+    return PORT_NAMES.get(port, "unknown")
+
+
+def load_allowlist(path):
+    """JSON file {host: [ports]} -> {host: set(ports)}."""
+    with open(path) as handle:
+        return {host: {int(p) for p in ports} for host, ports in json.load(handle).items()}
+
+
+def scan_host(host, allowlist=None, ports=None):
+    """Scan one host. Returns (services, findings).
+
+    services = [(host, port, service)] for every open port, ready for run_checks.
+    findings = one "Unexpected open port" Finding per open port not in the allowlist.
+    """
+    allowed = (allowlist or {}).get(host, set())
+    services, findings = [], []
+    for port in scan_ports(host, ports):
+        service = identify_service(host, port)
+        services.append((host, port, service))
+        if port not in allowed:
+            severity = "HIGH" if service in RISKY_SERVICES else "MEDIUM"
+            findings.append(Finding(host, port, service, "Unexpected open port", severity,
+                                    f"{service} is listening on {port} but this port is not in the allowlist for {host}"))
+    return services, findings
+
+
+def scan_and_check(hosts, allowlist=None, ports=None):
+    """Full pipeline: scan -> identify -> allowlist -> auth checks. Returns Findings."""
+    findings, targets = [], []
+    for host in hosts:
+        try:
+            services, host_findings = scan_host(host, allowlist, ports)
+        except (OSError, ValueError) as err:
+            print(f"[skip] {host}: {err}", file=sys.stderr)
+            continue
+        findings.extend(host_findings)
+        targets.extend((h, p, s) for h, p, s in services if s in CHECKS)  # auto-feed
+    findings.extend(run_checks(targets))
+    return sorted(findings, key=lambda f: SEVERITY_ORDER[f.severity])
+
+
 # --------------------------------------------------------------- dispatcher
 CHECKS = {"http": check_http, "mqtt": check_mqtt, "telnet": check_telnet}
 SERVICE_NAMES = {"http": "http", "http-alt": "http", "http-proxy": "http",
@@ -251,6 +368,10 @@ def targets_from_scan(path):
 def main():
     parser = argparse.ArgumentParser(description="Inadequate-authentication checks")
     parser.add_argument("--target", action="append", default=[], metavar="HOST:PORT:SERVICE")
+    parser.add_argument("--scan", action="append", default=[], metavar="HOST",
+                        help="scan this host for open ports, then auth-check what is found")
+    parser.add_argument("--allowlist", metavar="FILE", help="JSON {host: [expected ports]}")
+    parser.add_argument("--ports", metavar="LIST", help="comma-separated ports (default: common IoT ports)")
     parser.add_argument("--from-scan", metavar="FILE", help="JSON output of the open-port module")
     parser.add_argument("--out", metavar="FILE", help="save findings as JSON")
     args = parser.parse_args()
@@ -263,14 +384,19 @@ def main():
         targets.append((host, int(port), service))
     if args.from_scan:
         targets.extend(targets_from_scan(args.from_scan))
-    if not targets:
-        parser.error("give at least one --target or --from-scan")
+    if not targets and not args.scan:
+        parser.error("give at least one --scan, --target or --from-scan")
 
     findings = run_checks(targets)
+    if args.scan:
+        allowlist = load_allowlist(args.allowlist) if args.allowlist else {}
+        ports = [int(p) for p in args.ports.split(",")] if args.ports else None
+        findings = sorted(findings + scan_and_check(args.scan, allowlist, ports),
+                          key=lambda f: SEVERITY_ORDER[f.severity])
     for f in findings:
         print(f"[{f.severity:8}] {f.host}:{f.port} {f.service:6} {f.issue} - {f.detail}")
     if not findings:
-        print("No authentication findings.")
+        print("No findings.")
     if args.out:
         with open(args.out, "w") as handle:
             json.dump([asdict(f) for f in findings], handle, indent=2)
@@ -278,3 +404,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
