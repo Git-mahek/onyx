@@ -46,6 +46,8 @@ def start_http(port=0, creds=None):
 class _MQTTHandler(socketserver.BaseRequestHandler):
     def handle(self):
         data = self.request.recv(1024)
+        if len(data) < 12 or data[0] != 0x10:  # not an MQTT CONNECT (e.g. a scanner probe)
+            return
         flags = data[9]
         pos = 12  # skip fixed header, protocol name, level, flags, keep-alive
         pos += 2 + int.from_bytes(data[pos:pos + 2], "big")  # client id
@@ -87,6 +89,12 @@ def _strip_iac(raw):
 
 class _TelnetHandler(socketserver.StreamRequestHandler):
     def handle(self):
+        try:  # a scanner may connect, read the banner and hang up
+            self._session()
+        except OSError:
+            pass
+
+    def _session(self):
         self.wfile.write(bytes([255, 253, 1]) + b"\r\nBusyBox login: ")  # IAC DO ECHO
         user = _strip_iac(self.rfile.readline())
         self.wfile.write(b"Password: ")
@@ -111,3 +119,4 @@ if __name__ == "__main__":
     print("Fake targets running: http 18080, mqtt 11883, telnet 12323 (Ctrl+C to stop)")
     while True:
         time.sleep(1)
+
