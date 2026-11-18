@@ -4,7 +4,7 @@ This runbook covers the local simulator path:
 
 `mqtt_fake_sensors.py` → Mosquitto over TLS → `mqtt_subscriber.py` screening → MySQL → Flask dashboard.
 
-The scanner is a separate optional step for populating device risk scores. Run commands from the repository folder in PowerShell unless a step says otherwise. Each PowerShell window has its own environment, so set `MYSQL_PASSWORD` in every window that needs it.
+The scanner is a separate optional step for populating device risk scores. Run commands from the repository folder in PowerShell unless a step says otherwise. Each PowerShell window has its own environment, so set `MYSQL_PASSWORD` in every window that needs it. The checked-in local Docker Compose default is `sensorpw`; if you changed the database password, use the actual value configured for the `sensor` user instead.
 
 > **Local development only:** `docker-compose.yml` binds MQTT to `127.0.0.1`. The fake sensors on this same computer can connect; ESP32s or other computers on Wi-Fi cannot. Real hardware also needs a broker certificate valid for the host name/IP it uses, plus suitable broker authentication and access controls.
 
@@ -18,7 +18,23 @@ The scanner is a separate optional step for populating device risk scores. Run c
 python -m pip install paho-mqtt pymysql Flask
 ```
 
-## 1. Start and check MySQL and Mosquitto
+## 1. Run the auth, DoS, and risk tests
+
+Run these before starting the live pipeline. They use local fake services from `fake_targets.py`; they do not scan your Wi-Fi or physical sensors. `test_dos_and_risk.py` covers the controlled DoS checks and risk aggregation.
+
+```powershell
+python -m unittest test_auth_check test_dos_and_risk -v
+```
+
+To run every project test, including dashboard authentication and MQTT message parsing:
+
+```powershell
+python -m unittest discover -v
+```
+
+Both commands should finish with `OK`.
+
+## 2. Start and check MySQL and Mosquitto
 
 ```powershell
 docker compose up -d
@@ -39,18 +55,18 @@ python -c "import ssl,socket; c=ssl.create_default_context(cafile=r'certs\ca.crt
 
 It should print a TLS version. If the certificate check fails, stop and fix the certificate/broker setup before starting the clients.
 
-## 2. Start the collector — PowerShell window A
+## 3. Start the collector — PowerShell window A
 
-Set the value to the MySQL `sensor` password configured in `docker-compose.yml`, then start the collector. `--init-schema` creates any missing tables.
+Set the value to the MySQL `sensor` password configured in `docker-compose.yml` (`sensorpw` with the checked-in defaults), then start the collector. `--init-schema` creates any missing tables.
 
 ```powershell
-$env:MYSQL_PASSWORD = '<MySQL sensor password>'
+$env:MYSQL_PASSWORD = 'sensorpw'
 python mqtt_subscriber.py --host localhost --cafile certs\ca.crt --mysql-user sensor --init-schema --stats-interval 5
 ```
 
 Leave this window open. The collector should connect to MySQL and subscribe to `sensors/#` over TLS. It writes accepted and flagged readings to `readings`, and screening decisions to `audit_log`.
 
-## 3. Publish sensor data — PowerShell window B
+## 4. Publish sensor data — PowerShell window B
 
 ```powershell
 python mqtt_fake_sensors.py --host localhost --cafile certs\ca.crt --interval 2
@@ -58,7 +74,7 @@ python mqtt_fake_sensors.py --host localhost --cafile certs\ca.crt --interval 2
 
 Leave it running. It should print three topics per round: `sensors/water/node1`, `sensors/pir/node2`, and `sensors/temp/node3`. In window A, `received` and `accepted` should increase; `rejected` and `dropped` should stay at zero for normal simulated readings.
 
-## 4. Verify MySQL — PowerShell window C
+## 5. Verify MySQL — PowerShell window C
 
 These commands prompt for the MySQL `sensor` password:
 
@@ -71,18 +87,18 @@ docker compose exec mysql mysql -u sensor -p sensors -e "SELECT node_id, sensor,
 
 Expect the `readings` table to contain `water`, `pir`, and `temp` rows, and `audit_log` to contain mostly `accepted` decisions. The schema also creates `device_risk` and `users`.
 
-## 5. Start and verify the dashboard — PowerShell window D
+## 6. Start and verify the dashboard — PowerShell window D
 
 The dashboard reads MySQL; it does not connect to MQTT directly. Set the same MySQL password in this window:
 
 ```powershell
-$env:MYSQL_PASSWORD = '<MySQL sensor password>'
+$env:MYSQL_PASSWORD = 'sensorpw'
 python app.py
 ```
 
 Open [http://127.0.0.1:5000](http://127.0.0.1:5000) and log in with an account already created in the `users` table. If you have not created an account yet, stop here and run `python create_user.py <username> --role admin` in another PowerShell window with `MYSQL_PASSWORD` set. New readings should appear after the collector has inserted them.
 
-## 6. Optional: verify screening scenarios
+## 7. Optional: verify screening scenarios
 
 Keep the collector running. Stop only the fake sensors in window B with `Ctrl+C`, then restart them with one scenario at a time. The scenario fires on round 3 by default, after three baseline rounds:
 
@@ -102,9 +118,9 @@ Expected outcomes:
 
 The rate limit is 20 messages per node per 10 seconds by default. The number accepted during a flood depends on how much that node has already sent in the current window.
 
-## 7. Optional: write scanner risk scores
+## 8. Optional: write scanner risk scores
 
-The sensor pipeline does not create risk scores. To populate the dashboard's risk view, create a JSON map from each **authorized, privately addressed** sensor host to its database node ID, for example:
+The sensor pipeline does not create risk scores. The auth/port scanner can score its findings and write them to the dashboard. To populate the dashboard's risk view, create a JSON map from each **authorized, privately addressed** sensor host to its database node ID, for example:
 
 ```json
 {"192.168.1.101": "node1"}
@@ -118,7 +134,9 @@ python auth_check.py --scan 192.168.1.101 --node-map .\node-map.json --write-db
 
 Only scan devices you own or are authorized to test. The scanner requires `--node-map` with `--write-db`; it writes scores to `device_risk`, which the dashboard reads.
 
-## 8. Stop cleanly
+`dos_check.py` is tested by the local test command in step 1; it is not run by `auth_check.py --write-db` and does not currently have a separate CLI that saves DoS findings to MySQL.
+
+## 9. Stop cleanly
 
 1. Stop the fake sensors in window B with `Ctrl+C`.
 2. Stop the collector in window A with `Ctrl+C`. Wait for its `final:` line; for a clean run, `dropped=0` and `lost=0`.

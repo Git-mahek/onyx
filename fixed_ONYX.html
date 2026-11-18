@@ -54,7 +54,7 @@
         Overview
       </button>
       <button onclick="switchScreen('screen-alerts')" id="nav-alerts" class="nav-btn px-3 py-1.5 rounded-md text-xs font-medium text-slate-600 hover:text-slate-900 transition-all flex items-center gap-1.5">
-        Alerts <span class="px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-700 text-xs font-semibold font-mono-clean">5</span>
+        Alerts <span id="nav-alert-count" class="hidden px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-700 text-xs font-semibold font-mono-clean">0</span>
       </button>
       <button onclick="switchScreen('screen-risk')" id="nav-risk" class="nav-btn px-3 py-1.5 rounded-md text-xs font-medium text-slate-600 hover:text-slate-900 transition-all">
         Device Risk
@@ -139,20 +139,20 @@
         <div>
           <h1 class="text-2xl font-bold tracking-tight text-slate-900">System overview</h1>
           <p class="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Live telemetry from <span class="font-mono-clean text-slate-700 font-medium">sensors/#</span> · Last updated 18:17:42
+            Live telemetry from <span class="font-mono-clean text-slate-700 font-medium">sensors/#</span> · Last updated <span id="overview-last-updated">No readings yet</span>
           </p>
         </div>
 
         <div class="flex items-center gap-2">
-          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-            Collector connected (TLS · Mosquitto OK)
+          <span id="overview-collector-status" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
+            <span id="overview-collector-dot" class="w-2 h-2 rounded-full bg-slate-400"></span>
+            <span id="overview-collector-label">Waiting for sensor data</span>
           </span>
         </div>
       </div>
 
       <!-- Attention Banner -->
-      <div class="p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-3 text-amber-900">
+      <div id="overview-alert-banner" class="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-slate-700">
         <div class="flex items-center gap-3">
           <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -161,8 +161,8 @@
             </svg>
           </div>
           <div>
-            <h4 class="text-sm font-semibold text-amber-950">2 sensors require review · 1 rejected message in the last 10 minutes</h4>
-            <p class="text-xs text-amber-700 mt-0.5">Water tank reported a high rate of change (+2.1%/min) and an impossible reading (142%) was rejected.</p>
+            <h4 id="overview-alert-title" class="text-sm font-semibold text-slate-900">No recent alert events</h4>
+            <p id="overview-alert-detail" class="text-xs text-slate-600 mt-0.5">Alert activity will appear here when the collector records events.</p>
           </div>
         </div>
         <button onclick="switchScreen('screen-alerts')" class="px-3 py-1.5 rounded-lg bg-white hover:bg-amber-100/60 border border-amber-300 text-amber-900 font-medium text-xs shadow-2xs transition-all">
@@ -187,26 +187,26 @@
                   <h3 class="font-semibold text-slate-900 text-sm group-hover:text-blue-600 transition-colors">Water tank</h3>
                   <span class="text-xs text-slate-500 font-mono-clean">node1 · sensors/water/node1</span>
                 </div>
-                <span class="inline-flex items-center gap-1.5 text-xs text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Online
+                <span id="overview-water-status" class="inline-flex items-center gap-1.5 text-xs text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                  <span id="overview-water-dot" class="w-1.5 h-1.5 rounded-full bg-slate-400"></span><span id="overview-water-label">Waiting</span>
                 </span>
               </div>
 
               <!-- Value -->
               <div class="my-4">
                 <div class="flex items-baseline gap-1.5">
-                  <span class="text-3xl font-bold text-slate-900 font-mono-clean tracking-tight">78.4</span>
+                  <span id="overview-water-value" class="text-3xl font-bold text-slate-900 font-mono-clean tracking-tight">—</span>
                   <span class="text-slate-500 text-base font-medium">%</span>
                 </div>
-                <p class="text-xs text-amber-700 mt-1 font-medium flex items-center gap-1">
-                  <span>Fast rise: +2.1%/min (Flagged)</span>
+                <p id="overview-water-note" class="text-xs text-slate-500 mt-1 font-medium flex items-center gap-1">
+                  <span>No water reading stored</span>
                 </p>
               </div>
             </div>
 
             <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-              <span class="px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200 font-semibold font-mono-clean">
-                Risk: 82 (High)
+              <span id="overview-water-risk" class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-semibold font-mono-clean">
+                Risk: — (Not scored)
               </span>
               <span class="text-blue-600 group-hover:translate-x-0.5 transition-transform font-medium">
                 View details →
@@ -222,25 +222,25 @@
                   <h3 class="font-semibold text-slate-900 text-sm group-hover:text-blue-600 transition-colors">Motion sensor (PIR)</h3>
                   <span class="text-xs text-slate-500 font-mono-clean">node2 · sensors/pir/node2</span>
                 </div>
-                <span class="inline-flex items-center gap-1.5 text-xs text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Online
+                <span id="overview-motion-status" class="inline-flex items-center gap-1.5 text-xs text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                  <span id="overview-motion-dot" class="w-1.5 h-1.5 rounded-full bg-slate-400"></span><span id="overview-motion-label">Waiting</span>
                 </span>
               </div>
 
               <!-- Value -->
               <div class="my-4">
                 <div class="flex items-baseline gap-1.5">
-                  <span class="text-3xl font-bold text-slate-900 tracking-tight">Active</span>
+                  <span id="overview-motion-value" class="text-3xl font-bold text-slate-900 tracking-tight">—</span>
                 </div>
-                <p class="text-xs text-slate-500 mt-1">
-                  Motion pulse recorded 1.2s ago
+                <p id="overview-motion-note" class="text-xs text-slate-500 mt-1">
+                  No motion reading stored
                 </p>
               </div>
             </div>
 
             <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-              <span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold font-mono-clean">
-                Risk: 18 (Low)
+              <span id="overview-motion-risk" class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-semibold font-mono-clean">
+                Risk: — (Not scored)
               </span>
               <span class="text-blue-600 group-hover:translate-x-0.5 transition-transform font-medium">
                 View details →
@@ -256,29 +256,29 @@
                   <h3 class="font-semibold text-slate-900 text-sm group-hover:text-blue-600 transition-colors">Temperature & humidity</h3>
                   <span class="text-xs text-slate-500 font-mono-clean">node3 · sensors/temp/node3</span>
                 </div>
-                <span class="inline-flex items-center gap-1.5 text-xs text-emerald-700 font-medium bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Online
+                <span id="overview-temp-status" class="inline-flex items-center gap-1.5 text-xs text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                  <span id="overview-temp-dot" class="w-1.5 h-1.5 rounded-full bg-slate-400"></span><span id="overview-temp-label">Waiting</span>
                 </span>
               </div>
 
               <!-- Value -->
               <div class="my-4">
                 <div class="flex items-baseline gap-2">
-                  <span class="text-3xl font-bold text-slate-900 font-mono-clean tracking-tight">24.2</span>
+                  <span id="overview-temp-value" class="text-3xl font-bold text-slate-900 font-mono-clean tracking-tight">—</span>
                   <span class="text-slate-500 text-sm">°C</span>
                   <span class="text-slate-300">/</span>
-                  <span class="text-2xl font-semibold text-slate-700 font-mono-clean">58</span>
+                  <span id="overview-humidity-value" class="text-2xl font-semibold text-slate-700 font-mono-clean">—</span>
                   <span class="text-slate-500 text-xs">%RH</span>
                 </div>
-                <p class="text-xs text-slate-500 mt-1">
-                  DHT11 limits: 0-50°C, 20-90%RH
+                <p id="overview-temp-note" class="text-xs text-slate-500 mt-1">
+                  No climate reading stored
                 </p>
               </div>
             </div>
 
             <div class="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-              <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-semibold font-mono-clean">
-                Risk: 24 (Low)
+              <span id="overview-temp-risk" class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-semibold font-mono-clean">
+                Risk: — (Not scored)
               </span>
               <span class="text-blue-600 group-hover:translate-x-0.5 transition-transform font-medium">
                 View details →
@@ -289,36 +289,36 @@
         </div>
       </div>
 
-      <!-- MESSAGES 24H METRICS (Clean Strip) -->
+      <!-- RECENT AUDIT METRICS -->
       <div class="bg-white border border-slate-200 rounded-xl p-5 card-shadow">
         <div class="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
-          <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Collector Throughput (Last 24 Hours)</span>
-          <span class="text-xs text-slate-500 font-medium font-mono-clean">12,920 total messages</span>
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Recent audit activity · newest 50 events</span>
+          <span class="text-xs text-slate-500 font-medium font-mono-clean"><span id="overview-total-events">0 events</span> · Latest: <span id="overview-log-updated">No events yet</span></span>
         </div>
 
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div class="p-3.5 bg-slate-50 rounded-lg border border-slate-100">
             <span class="text-xs text-slate-500 block">Accepted (Normal)</span>
-            <span class="text-2xl font-bold text-slate-900 font-mono-clean mt-1 block">12,684</span>
-            <span class="text-xs text-emerald-600 mt-0.5 block font-medium">98.2% · Within bounds</span>
+            <span id="overview-accepted-count" class="text-2xl font-bold text-slate-900 font-mono-clean mt-1 block">0</span>
+            <span id="overview-accepted-share" class="text-xs text-emerald-600 mt-0.5 block font-medium">0% · Within bounds</span>
           </div>
 
           <div class="p-3.5 bg-slate-50 rounded-lg border border-slate-100">
             <span class="text-xs text-amber-700 block">Flagged (Tier 2)</span>
-            <span class="text-2xl font-bold text-amber-600 font-mono-clean mt-1 block">186</span>
-            <span class="text-xs text-slate-500 mt-0.5 block">1.4% · Accepted & tagged</span>
+            <span id="overview-flagged-count" class="text-2xl font-bold text-amber-600 font-mono-clean mt-1 block">0</span>
+            <span id="overview-flagged-share" class="text-xs text-slate-500 mt-0.5 block">0% · Accepted & tagged</span>
           </div>
 
           <div class="p-3.5 bg-slate-50 rounded-lg border border-slate-100">
             <span class="text-xs text-rose-700 block">Rejected (Tier 1)</span>
-            <span class="text-2xl font-bold text-rose-600 font-mono-clean mt-1 block">42</span>
-            <span class="text-xs text-slate-500 mt-0.5 block">0.3% · Impossible data</span>
+            <span id="overview-rejected-count" class="text-2xl font-bold text-rose-600 font-mono-clean mt-1 block">0</span>
+            <span id="overview-rejected-share" class="text-xs text-slate-500 mt-0.5 block">0% · Impossible data</span>
           </div>
 
           <div class="p-3.5 bg-slate-50 rounded-lg border border-slate-100">
             <span class="text-xs text-slate-600 block">Rate limited</span>
-            <span class="text-2xl font-bold text-slate-800 font-mono-clean mt-1 block">8</span>
-            <span class="text-xs text-slate-500 mt-0.5 block">>30 msgs / 10s limit</span>
+            <span id="overview-rate-limited-count" class="text-2xl font-bold text-slate-800 font-mono-clean mt-1 block">0</span>
+            <span id="overview-rate-limited-share" class="text-xs text-slate-500 mt-0.5 block">0% · Rate limited</span>
           </div>
         </div>
       </div>
@@ -351,7 +351,7 @@
         <div>
           <h1 class="text-2xl font-bold tracking-tight text-slate-900">Alert feed</h1>
           <p class="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Screened in checks.py · Newest events first · Updated 18:17:42
+            Screened by the collector · Newest events first · Updated <span id="alerts-last-updated">Waiting for data</span>
           </p>
         </div>
         <span id="alerts-summary" class="text-xs text-slate-500" aria-live="polite">Showing 12 of 12 events</span>
@@ -405,7 +405,7 @@
             Aggregated threat score (0-100) computed from recent flags, offline duration, and open port scans
           </p>
         </div>
-        <span class="text-xs font-mono-clean text-slate-500">Updated every 60 seconds</span>
+        <span class="text-xs font-mono-clean text-slate-500">Sensor status refreshes every 10 seconds · Scores require a saved scanner run</span>
       </div>
 
       <!-- KPI Summary Cards -->
@@ -425,7 +425,7 @@
             <span class="text-4xl font-bold text-slate-900 font-mono-clean">1</span>
             <span class="text-xs text-slate-500">of 3 active nodes</span>
           </div>
-          <span class="text-xs text-slate-500">Under simulated burst attack</span>
+          <span id="risk-elevated-note" class="text-xs text-slate-500">No scanner scores available</span>
         </div>
 
         <div class="p-5 bg-white border border-slate-200 rounded-xl card-shadow">
@@ -460,20 +460,7 @@
               <div class="h-full rounded-full bg-rose-500" style="width: 82%"></div>
             </div>
 
-            <div class="grid grid-cols-3 gap-3 pt-2 text-xs">
-              <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
-                <span class="text-slate-500 block">Tier 1 Drops</span>
-                <span class="font-semibold text-rose-700">+40 pts (142% value)</span>
-              </div>
-              <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
-                <span class="text-slate-500 block">Rate Limit Trips</span>
-                <span class="font-semibold text-amber-700">+25 pts (Flood test)</span>
-              </div>
-              <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
-                <span class="text-slate-500 block">Open Ports</span>
-                <span class="font-semibold text-slate-800">+17 pts (Port 80 HTTP)</span>
-              </div>
-            </div>
+            <p class="risk-card-source text-xs text-slate-500">No scanner score saved for this node.</p>
           </div>
 
           <!-- Node 2 -->
@@ -493,7 +480,7 @@
               <div class="h-full rounded-full bg-emerald-500" style="width: 18%"></div>
             </div>
 
-            <p class="text-xs text-slate-500">Nominal readings · Rate limiter healthy · Only port 8883 (TLS) open.</p>
+            <p class="risk-card-source text-xs text-slate-500">No scanner score saved for this node.</p>
           </div>
 
           <!-- Node 3 -->
@@ -513,7 +500,7 @@
               <div class="h-full rounded-full bg-blue-500" style="width: 24%"></div>
             </div>
 
-            <p class="text-xs text-slate-500">1 unusual gradient jump (+18°C) flagged in tier 2 · Decaying as sensor stays normal.</p>
+            <p class="risk-card-source text-xs text-slate-500">No scanner score saved for this node.</p>
           </div>
         </div>
 
@@ -645,7 +632,7 @@
             </span>
           </div>
           <p class="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Immutable records stored in MySQL 8. Every accepted, flagged, rejected and throttled packet is logged.
+            Immutable records stored in MySQL 8. Every accepted, flagged, rejected and throttled packet is logged · Last refreshed <span id="audit-last-updated">Waiting for data</span>
           </p>
         </div>
 
@@ -664,7 +651,7 @@
         <div class="lg:col-span-8 bg-white border border-slate-200 rounded-xl card-shadow overflow-hidden">
           <div class="p-3 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 flex justify-between">
             <span>Recent audit events</span>
-            <span class="text-slate-400 font-normal">Click a row to inspect</span>
+            <span class="text-slate-400 font-normal">Newest 100 · Click a row to inspect</span>
           </div>
 
           <div class="p-3 border-b border-slate-100 flex flex-wrap items-center gap-3 text-xs">
@@ -864,6 +851,7 @@
 
     // ---------------- alert feed ----------------
     let ALERTS = [];
+    let alertLoadError = '';
     const alertState = { status: 'all', node: 'all', open: new Set() };
 
     function setAlertStatus(s) { alertState.status = s; renderAlerts(); }
@@ -899,7 +887,7 @@
           : '<button type="button" onclick="toggleReview(\'' + a.id + '\')" aria-expanded="' + open + '" class="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs">' + (open ? 'Hide' : 'Review') + '</button>';
         let html =
           '<tr class="hover:bg-slate-50/80 transition-colors">' +
-            '<td class="py-3 px-4 font-mono-clean text-slate-500">' + esc(a.time) + '</td>' +
+            '<td class="py-3 px-4 font-mono-clean text-slate-500">' + esc(formatEventTime(a)) + '</td>' +
             '<td class="py-3 px-4 font-medium text-slate-900">' + (a.node === 'unknown' ? 'unknown' : esc(a.node)) + ' <span class="text-slate-400 font-normal">' + esc(a.tag) + '</span></td>' +
             '<td class="py-3 px-4 text-slate-800"><span class="font-semibold ' + L.title + '">' + esc(a.title) + '</span><span class="text-slate-500 block text-xs">' + esc(a.desc) + '</span></td>' +
             '<td class="py-3 px-4"><span class="px-2 py-0.5 rounded border font-semibold font-mono-clean text-xs ' + L.badge + '">' + L.label + '</span></td>' +
@@ -928,7 +916,7 @@
       slate:   { text: 'text-slate-800',   badge: 'bg-slate-100 text-slate-700 border-slate-200',      bar: 'bg-blue-500' }
     };
     const WINDOWS = {
-      '1h':  { min: 60,    pts: 31, labels: ['17:17', '17:32', '17:47', '18:02', '18:17'] },
+      '1h':  { min: 60,    pts: 31, labels: [] },
       '24h': { min: 1440,  pts: 48, labels: ['24 h ago', '18 h ago', '12 h ago', '6 h ago', 'Now'] },
       '7d':  { min: 10080, pts: 42, labels: ['7 days ago', '5 days ago', '3 days ago', '1 day ago', 'Now'] }
     };
@@ -962,6 +950,15 @@
     }
 
     function chartLabels(W) {
+      if (W.min === 60) {
+        const now = Date.now();
+        const spanMs = W.min * 60 * 1000;
+        return Array.from({ length: 5 }, (_, index) =>
+          new Date(now - spanMs + index * spanMs / 4).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit'
+          }));
+      }
       return W.labels;
     }
 
@@ -1052,6 +1049,134 @@
       return Number.isFinite(time) ? new Date(time).toLocaleString() : 'unknown';
     }
 
+    function formatEventTime(event) {
+      const eventTimestamp = event && event.payload && event.payload.ts;
+      const time = timestampMs(eventTimestamp);
+      return Number.isFinite(time)
+        ? new Date(time).toLocaleTimeString()
+        : event && event.time ? event.time + ' UTC' : 'unknown';
+    }
+
+    function renderOverview() {
+      const definitions = [
+        { kind: 'water', prefix: 'water', nodeId: 'node1' },
+        { kind: 'pir', prefix: 'motion', nodeId: 'node2' },
+        { kind: 'temp', prefix: 'temp', nodeId: 'node3' }
+      ];
+      const timestamps = [];
+      let onlineCount = 0;
+
+      definitions.forEach(({ kind, prefix, nodeId }) => {
+        const reading = latestSensors[kind];
+        const time = reading ? timestampMs(reading.ts) : NaN;
+        if (Number.isFinite(time)) timestamps.push(time);
+        const age = Number.isFinite(time) ? Date.now() - time : Infinity;
+        const online = age >= -5000 && age <= 10000;
+        if (online) onlineCount++;
+
+        const status = document.getElementById('overview-' + prefix + '-status');
+        const dot = document.getElementById('overview-' + prefix + '-dot');
+        const label = document.getElementById('overview-' + prefix + '-label');
+        const state = sensorLatestError ? 'Unavailable' : online ? 'Online' : reading ? 'Stale' : 'No data';
+        label.textContent = state;
+        status.className = 'inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md border ' +
+          (online ? 'text-emerald-700 bg-emerald-50 border-emerald-200' :
+            sensorLatestError ? 'text-rose-700 bg-rose-50 border-rose-200' :
+              'text-slate-600 bg-slate-100 border-slate-200');
+        dot.className = 'w-1.5 h-1.5 rounded-full ' +
+          (online ? 'bg-emerald-500' : sensorLatestError ? 'bg-rose-500' : 'bg-slate-400');
+
+        if (prefix === 'water') {
+          document.getElementById('overview-water-value').textContent =
+            reading && reading.level_pct != null ? Number(reading.level_pct).toFixed(1) : '—';
+          document.getElementById('overview-water-note').textContent = reading
+            ? (Number(reading.leak) === 1 ? 'Leak detected · ' : 'Latest water level · ') + formatAge(reading.ts)
+            : sensorLatestError || 'No water reading stored';
+        } else if (prefix === 'motion') {
+          document.getElementById('overview-motion-value').textContent =
+            reading && reading.motion != null ? (Number(reading.motion) === 1 ? 'Active' : 'Idle') : '—';
+          document.getElementById('overview-motion-note').textContent = reading
+            ? 'Latest reading · ' + formatAge(reading.ts)
+            : sensorLatestError || 'No motion reading stored';
+        } else {
+          document.getElementById('overview-temp-value').textContent =
+            reading && reading.temperature_c != null ? Number(reading.temperature_c).toFixed(1) : '—';
+          document.getElementById('overview-humidity-value').textContent =
+            reading && reading.humidity_pct != null ? Number(reading.humidity_pct).toFixed(1) : '—';
+          document.getElementById('overview-temp-note').textContent = reading
+            ? 'Latest climate reading · ' + formatAge(reading.ts)
+            : sensorLatestError || 'No climate reading stored';
+        }
+
+        const risk = riskScores.find(item => item.node_id === (reading ? reading.node_id : nodeId));
+        const riskElement = document.getElementById('overview-' + prefix + '-risk');
+        riskElement.textContent = risk ? 'Risk: ' + risk.score + ' (' + risk.band + ')' : 'Risk: — (Not scored)';
+        const style = risk ? bandClass(risk.band) : RISK_CLASS.slate;
+        riskElement.className = 'px-2 py-0.5 rounded border font-semibold font-mono-clean ' + style.badge;
+      });
+
+      const lastUpdated = timestamps.length ? Math.max(...timestamps) : NaN;
+      document.getElementById('overview-last-updated').textContent = Number.isFinite(lastUpdated)
+        ? new Date(lastUpdated).toLocaleTimeString()
+        : sensorLatestError ? 'Unavailable' : 'No readings yet';
+
+      const collectorStatus = document.getElementById('overview-collector-status');
+      const collectorDot = document.getElementById('overview-collector-dot');
+      document.getElementById('overview-collector-label').textContent = sensorLatestError
+        ? 'Sensor API unavailable'
+        : onlineCount === definitions.length ? 'All sensor feeds online'
+          : onlineCount ? onlineCount + ' of 3 sensor feeds online' : 'No recent sensor data';
+      collectorStatus.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ' +
+        (onlineCount === definitions.length ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+          sensorLatestError ? 'bg-rose-50 text-rose-700 border-rose-200' :
+            'bg-slate-100 text-slate-600 border-slate-200');
+      collectorDot.className = 'w-2 h-2 rounded-full ' +
+        (onlineCount === definitions.length ? 'bg-emerald-500' :
+          sensorLatestError ? 'bg-rose-500' : 'bg-slate-400');
+
+      const reviewAlerts = ALERTS.filter(alert => alert.status === 'flagged' || alert.status === 'rejected');
+      const alertTitle = document.getElementById('overview-alert-title');
+      const alertDetail = document.getElementById('overview-alert-detail');
+      alertTitle.textContent = alertLoadError
+        ? 'Alert feed unavailable'
+        : reviewAlerts.length
+        ? reviewAlerts.length + ' flagged or rejected event' + (reviewAlerts.length === 1 ? '' : 's') + ' in recent activity'
+        : 'No flagged or rejected events in recent activity';
+      alertDetail.textContent = alertLoadError
+        ? alertLoadError
+        : reviewAlerts.length
+        ? reviewAlerts[0].title + ' · ' + reviewAlerts[0].node + ' · ' + formatEventTime(reviewAlerts[0])
+        : ALERTS.length ? 'No review events among the latest ' + ALERTS.length + ' audit entries.'
+          : 'No audit events have been recorded yet.';
+
+      const alertBadge = document.getElementById('nav-alert-count');
+      alertBadge.textContent = String(reviewAlerts.length);
+      alertBadge.classList.toggle('hidden', reviewAlerts.length === 0);
+
+      const counts = {
+        accepted: ALERTS.filter(alert => alert.status === 'normal').length,
+        flagged: ALERTS.filter(alert => alert.status === 'flagged').length,
+        rejected: ALERTS.filter(alert => alert.status === 'rejected' &&
+          !alert.title.toLowerCase().startsWith('rate limited:')).length,
+        rateLimited: ALERTS.filter(alert => alert.title.toLowerCase().startsWith('rate limited:')).length
+      };
+      const total = ALERTS.length;
+      const percent = count => (total ? Math.round(count * 1000 / total) / 10 : 0) + '%';
+      document.getElementById('overview-total-events').textContent =
+        total + (total === 1 ? ' event' : ' events');
+      document.getElementById('overview-log-updated').textContent = alertLoadError
+        ? 'Unavailable'
+        : ALERTS.length ? formatEventTime(ALERTS[0]) : 'No events yet';
+      document.getElementById('overview-accepted-count').textContent = String(counts.accepted);
+      document.getElementById('overview-accepted-share').textContent = percent(counts.accepted) + ' · Within bounds';
+      document.getElementById('overview-flagged-count').textContent = String(counts.flagged);
+      document.getElementById('overview-flagged-share').textContent = percent(counts.flagged) + ' · Accepted & tagged';
+      document.getElementById('overview-rejected-count').textContent = String(counts.rejected);
+      document.getElementById('overview-rejected-share').textContent = percent(counts.rejected) + ' · Impossible data';
+      document.getElementById('overview-rate-limited-count').textContent = String(counts.rateLimited);
+      document.getElementById('overview-rate-limited-share').textContent = percent(counts.rateLimited) + ' · Rate limited';
+    }
+
     function renderSensor() {
       const key = sensorState.key, d = sensorData[key], W = WINDOWS[sensorState.range];
       document.getElementById('sensor-detail-title').innerText = d.title;
@@ -1133,7 +1258,7 @@
           }
           chartArea.innerHTML = html;
           legend.innerHTML = '<span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-blue-600"></span> Stored readings</span>' +
-            '<span class="text-slate-500">' + validRows.length + ' message' + (validRows.length === 1 ? '' : 's') + ' in range</span>';
+            '<span class="text-slate-500">' + validRows.length + ' message' + (validRows.length === 1 ? '' : 's') + ' in range · Refreshed ' + new Date().toLocaleTimeString() + '</span>';
         })
         .catch(error => {
           if (requestId !== sensorState.requestId) return;
@@ -1173,8 +1298,10 @@
       const highestSpans = kpis[0].querySelectorAll('span');
       const elevatedSpans = kpis[1].querySelectorAll('span');
       const offlineSpans = kpis[2].querySelectorAll('span');
+      const elevatedNote = document.getElementById('risk-elevated-note');
 
       if (riskLoadError) {
+        elevatedNote.textContent = 'Scanner risk data unavailable';
         highestSpans[1].textContent = '—';
         highestSpans[2].textContent = 'Unavailable';
         highestSpans[3].textContent = 'Risk data unavailable';
@@ -1183,6 +1310,9 @@
           setRiskCard(deviceCards[i], null);
         }
       } else {
+        elevatedNote.textContent = rows.length
+          ? rows.length + ' scored node' + (rows.length === 1 ? '' : 's') + ' · ' + elevated + ' medium/high risk'
+          : 'No scanner scores available';
         const highestStyle = highest ? bandClass(highest.band) : RISK_CLASS.slate;
         highestSpans[1].textContent = highest ? String(highest.score) : '—';
         highestSpans[1].className = 'text-4xl font-bold font-mono-clean ' + highestStyle.text;
@@ -1229,6 +1359,11 @@
       badge.className = 'ml-2 px-2 py-0.5 rounded border text-xs font-semibold ' + style.badge;
       progress.style.width = score === null || !Number.isFinite(score) ? '0%' : score + '%';
       progress.className = 'h-full rounded-full ' + style.bar;
+      const source = card.querySelector('.risk-card-source');
+      source.textContent = item
+        ? 'Latest saved scanner result · ' + formatTimestamp(item.last_scanned)
+        : riskLoadError ? 'Scanner score unavailable.'
+          : 'No saved score. Run an authorized scan with --write-db to populate this card.';
     }
 
     // ---------------- audit log ----------------
@@ -1264,7 +1399,7 @@
         return '<div role="button" tabindex="0" aria-pressed="' + on + '" onclick="inspectAuditRow(\'' + e.key + '\')" onkeydown="auditRowKey(event,\'' + e.key + '\')" id="row-' + e.key + '" ' +
           'class="audit-row p-3.5 cursor-pointer hover:bg-slate-50 transition-colors flex items-center justify-between ' + (on ? 'bg-blue-50/60 border-l-4 border-blue-600' : '') + '">' +
           '<div><span class="font-semibold text-slate-900">' + esc(e.title) + '</span><span class="text-slate-500 block text-xs">' + esc(e.sub) + '</span></div>' +
-          '<div class="text-right"><span class="font-mono-clean text-slate-500 block">' + esc(e.time) + '</span>' +
+          '<div class="text-right"><span class="font-mono-clean text-slate-500 block">' + esc(formatEventTime(e)) + '</span>' +
           '<span class="px-2 py-0.5 rounded border font-medium text-xs ' + L.badge + '">' + L.label + '</span></div></div>';
       }).join('');
       const d = AUDIT.find(e => e.key === auditState.sel);
@@ -1309,16 +1444,34 @@
     async function loadAlerts() {
       try {
         const res = await fetch('/api/alerts');
-        if (res.ok) { ALERTS = await res.json(); renderAlerts(); }
-      } catch (ex) { console.error('loadAlerts failed', ex); }
+        if (!res.ok) throw new Error('Alerts request failed with status ' + res.status);
+        const data = await res.json();
+        if (!Array.isArray(data)) throw new Error('Alerts response was not a list');
+        ALERTS = data;
+        alertLoadError = '';
+        document.getElementById('alerts-last-updated').textContent = new Date().toLocaleTimeString();
+        renderAlerts();
+      } catch (error) {
+        alertLoadError = 'Could not load recent alert events';
+        document.getElementById('alerts-last-updated').textContent = 'Refresh failed';
+        console.error('loadAlerts failed', error);
+      }
     }
 
     async function loadAudit() {
       if (currentUser && currentUser.role !== 'admin') { AUDIT = []; renderAudit(); return; }
       try {
         const res = await fetch('/api/audit');
-        if (res.ok) { AUDIT = await res.json(); renderAudit(); }
-      } catch (ex) { console.error('loadAudit failed', ex); }
+        if (!res.ok) throw new Error('Audit request failed with status ' + res.status);
+        const data = await res.json();
+        if (!Array.isArray(data)) throw new Error('Audit response was not a list');
+        AUDIT = data;
+        document.getElementById('audit-last-updated').textContent = new Date().toLocaleTimeString();
+        renderAudit();
+      } catch (error) {
+        document.getElementById('audit-last-updated').textContent = 'Refresh failed';
+        console.error('loadAudit failed', error);
+      }
     }
 
     async function loadLatestSensors() {
@@ -1357,12 +1510,13 @@
     async function loadAllData() {
       await Promise.all([loadAlerts(), loadAudit(), loadLatestSensors(), loadRiskScores()]);
       renderRiskScores();
+      renderOverview();
       renderSensor();
     }
 
     function startDashboardRefresh() {
       if (dashboardRefreshTimer === null) {
-        dashboardRefreshTimer = setInterval(loadAllData, 60000);
+        dashboardRefreshTimer = setInterval(loadAllData, 10000);
       }
     }
 
