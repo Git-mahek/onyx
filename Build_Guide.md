@@ -115,6 +115,21 @@ Both modules output the same `Finding` shape — `host, port, service, issue, se
 
 Both scanner modules' findings are combined into a single per-device risk score. Severity isn't just the worst single finding — combinations matter: an open port *plus* a working default login rates higher than either alone, since that's a directly exploitable path (this is the exact pattern Mirai used).
 
+To persist full-scan scores for the dashboard, create a host-to-node map, for example:
+
+```json
+{"192.168.1.101": "node1", "192.168.1.102": "node2"}
+```
+
+Then run the scanner with `--write-db` and the MySQL settings used by the rest of the project:
+
+```sh
+python auth_check.py --scan 192.168.1.101 --allowlist allowlist.json \
+  --node-map node-map.json --write-db
+```
+
+`--write-db` requires a full `--scan` and a mapping for each requested host. Successful scans, including hosts with no findings, are scored and upserted into `device_risk`; the dashboard reads those scores through `/api/risk`. Set `MYSQL_PASSWORD` in the environment. The default behavior remains report-only.
+
 ---
 
 ## 8. Dashboard
@@ -124,6 +139,15 @@ Flask + Chart.js, reading from MySQL (not talking to the sensors directly). Show
 - Flags from the plausibility check
 - Per-device risk scores from the scanner
 - Admin-only audit log view
+
+Login accounts are stored in the MySQL `users` table; passwords are saved as hashes. Set `MYSQL_PASSWORD` for the database account, then create an administrator interactively:
+
+```sh
+python create_user.py your_username --role admin
+python app.py
+```
+
+The login page starts blank. There are no built-in or demo accounts; create each account with `create_user.py`.
 
 ---
 

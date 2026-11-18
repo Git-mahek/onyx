@@ -23,8 +23,6 @@ SEVERITY_POINTS = {"LOW": 1, "MEDIUM": 3, "HIGH": 6, "CRITICAL": 10}
 # Matched case-insensitively against Finding.issue. Order doesn't matter;
 # a pair only needs to appear once each on the same host to trigger.
 COMBO_RULES = [
-    ("telnet service is running", "default credentials accepted", 8,
-     "exposed service + working default login = directly exploitable (the Mirai pattern)"),
     ("no authentication required", "requests failed under load", 4,
      "unauthenticated service that also degrades under load = easy target, no resilience"),
     ("anonymous access allowed", "default credentials accepted", 5,
@@ -71,6 +69,26 @@ def score_device(node_id, findings, now=None):
         explanation.append(f"{f.severity} '{f.issue}' (+{pts})")
 
     issues_lower = [f.issue.lower() for f in findings]
+    default_credential_ports = {
+        f.port for f in findings if "default credentials accepted" in f.issue.lower()
+    }
+    unexpected_port_ports = {
+        f.port for f in findings if "unexpected open port" in f.issue.lower()
+    }
+    telnet_ports = {
+        f.port for f in findings if "telnet service is running" in f.issue.lower()
+    }
+    if default_credential_ports & (unexpected_port_ports | telnet_ports):
+        points += 8
+        if default_credential_ports & unexpected_port_ports:
+            explanation.append(
+                "COMBO: unexpected open port + working default login = directly exploitable (+8)"
+            )
+        else:
+            explanation.append(
+                "COMBO: exposed Telnet service + working default login = directly exploitable (+8)"
+            )
+
     for a, b, bonus, why in COMBO_RULES:
         has_a = any(a in issue for issue in issues_lower)
         has_b = any(b in issue for issue in issues_lower)
@@ -87,3 +105,15 @@ def score_all(findings_by_device, now=None):
     of node_id -> RiskScore."""
     return {node_id: score_device(node_id, findings, now)
             for node_id, findings in findings_by_device.items()}
+
+
+def score_hosts(hosts, findings, host_to_node=None, now=None):
+    """Score scanned hosts by node ID, including clean hosts with no findings."""
+    host_to_node = host_to_node or {}
+    findings_by_device = {}
+    for host in hosts:
+        findings_by_device.setdefault(host_to_node.get(host, host), [])
+    for finding in findings:
+        node_id = host_to_node.get(finding.host, finding.host)
+        findings_by_device.setdefault(node_id, []).append(finding)
+    return score_all(findings_by_device, now)

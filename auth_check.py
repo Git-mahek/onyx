@@ -36,12 +36,15 @@ import base64
 import http.client
 import ipaddress
 import json
+import os
 import socket
 import sys
 import time
 from dataclasses import asdict
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from findings import Finding
+from risk_aggregation import score_hosts
 
 # Keep this list short. Widening it turns the tool into a brute-forcer.
 DEFAULT_CREDENTIALS = [
@@ -67,23 +70,41 @@ def require_private(host):
 
 # --------------------------------------------------------------------- HTTP
 def _http_get(host, port, path, headers=None):
-    conn = http.client.HTTPConnection(host, port, timeout=TIMEOUT)
-    try:
-        conn.request("GET", path, headers=headers or {})
-        resp = conn.getresponse()
-        resp.read(1024)
-        return resp.status, resp.getheader("WWW-Authenticate") or ""
-    finally:
-        conn.close()
+    current_path = path
+    for redirect_count in range(6):
+        conn = http.client.HTTPConnection(host, port, timeout=TIMEOUT)
+        try:
+            conn.request("GET", current_path, headers=headers or {})
+            resp = conn.getresponse()
+            status = resp.status
+            www_auth = resp.getheader("WWW-Authenticate") or ""
+            location = resp.getheader("Location")
+            resp.read(1024)
+        finally:
+            conn.close()
+
+        if status not in (301, 302, 303, 307, 308) or not location or redirect_count == 5:
+            return status, www_auth
+
+        target = urlsplit(urljoin(f"http://{host}:{port}{current_path}", location))
+        try:
+            target_port = target.port or 80
+        except ValueError:
+            return status, www_auth
+        if (target.scheme != "http" or target.hostname != host.lower()
+                or target_port != port or target.username or target.password):
+            return status, www_auth
+        current_path = urlunsplit(("", "", target.path or "/", target.query, ""))
+    return status, www_auth
 
 
 def check_http(host, port, path="/"):
     findings = []
     status, www_auth = _http_get(host, port, path)  # OSError -> caller skips
 
-    if status == 200:
+    if 200 <= status < 300:
         findings.append(Finding(host, port, "http", "No authentication required", "HIGH",
-                                f"GET {path} returned 200 without any credentials"))
+                                f"GET {path} returned {status} without any credentials"))
     elif status == 401 and www_auth.lower().startswith("basic"):
         findings.append(Finding(host, port, "http", "Credentials sent in cleartext", "MEDIUM",
                                 "HTTP Basic auth over plain HTTP: login is only base64-encoded"))
@@ -93,7 +114,7 @@ def check_http(host, port, path="/"):
                 status, _ = _http_get(host, port, path, {"Authorization": f"Basic {token}"})
             except OSError:
                 break
-            if status == 200:
+            if 200 <= status < 300:
                 findings.append(Finding(host, port, "http", "Default credentials accepted", "CRITICAL",
                                         f"login worked with {user}:{password!r}"))
                 break
@@ -104,6 +125,16 @@ def check_http(host, port, path="/"):
 # --------------------------------------------------------------------- MQTT
 def _mqtt_str(raw):
     return len(raw).to_bytes(2, "big") + raw
+
+
+def _recv_exact(sock, size):
+    received = bytearray()
+    while len(received) < size:
+        chunk = sock.recv(size - len(received))
+        if not chunk:
+            break
+        received.extend(chunk)
+    return bytes(received)
 
 
 def _mqtt_connect(host, port, username=None, password=None):
@@ -123,10 +154,13 @@ def _mqtt_connect(host, port, username=None, password=None):
     assert len(body) < 128  # remaining-length fits in one byte
     with socket.create_connection((host, port), timeout=TIMEOUT) as sock:
         sock.sendall(bytes([0x10, len(body)]) + body)
-        reply = sock.recv(4)
-    if len(reply) < 4 or reply[0] != 0x20:
+        header = _recv_exact(sock, 2)
+        if len(header) != 2 or header[0] != 0x20 or header[1] != 2:
+            raise ValueError("service did not answer like an MQTT broker")
+        body = _recv_exact(sock, 2)
+    if len(body) != 2:
         raise ValueError("service did not answer like an MQTT broker")
-    return reply[3]
+    return body[1]
 
 
 def check_mqtt(host, port):
@@ -299,6 +333,19 @@ def load_allowlist(path):
         return {host: {int(p) for p in ports} for host, ports in json.load(handle).items()}
 
 
+def load_node_map(path):
+    """JSON file {host: node_id} -> validated host-to-device mapping."""
+    with open(path) as handle:
+        mapping = json.load(handle)
+    if not isinstance(mapping, dict) or any(
+        not isinstance(host, str) or not host.strip()
+        or not isinstance(node_id, str) or not node_id.strip()
+        for host, node_id in mapping.items()
+    ):
+        raise ValueError("node map must be a JSON object mapping host names to non-empty node IDs")
+    return {host.strip(): node_id.strip() for host, node_id in mapping.items()}
+
+
 def scan_host(host, allowlist=None, ports=None):
     """Scan one host. Returns (services, findings).
 
@@ -319,17 +366,28 @@ def scan_host(host, allowlist=None, ports=None):
 
 def scan_and_check(hosts, allowlist=None, ports=None):
     """Full pipeline: scan -> identify -> allowlist -> auth checks. Returns Findings."""
+    findings, _ = scan_hosts(hosts, allowlist, ports)
+    return findings
+
+
+def scan_hosts(hosts, allowlist=None, ports=None, auth_targets=None):
+    """Return findings and scanned hosts; optionally collect discovered auth targets."""
     findings, targets = [], []
+    scanned_hosts = []
     for host in hosts:
         try:
             services, host_findings = scan_host(host, allowlist, ports)
         except (OSError, ValueError) as err:
             print(f"[skip] {host}: {err}", file=sys.stderr)
             continue
+        scanned_hosts.append(host)
         findings.extend(host_findings)
         targets.extend((h, p, s) for h, p, s in services if s in CHECKS)  # auto-feed
-    findings.extend(run_checks(targets))
-    return sorted(findings, key=lambda f: SEVERITY_ORDER[f.severity])
+    if auth_targets is None:
+        findings.extend(run_checks(targets))
+    else:
+        auth_targets.extend(targets)
+    return sorted(findings, key=lambda f: SEVERITY_ORDER[f.severity]), scanned_hosts
 
 
 # --------------------------------------------------------------- dispatcher
@@ -352,6 +410,18 @@ def run_checks(targets):
     return sorted(findings, key=lambda f: SEVERITY_ORDER[f.severity])
 
 
+def deduplicate_findings(findings):
+    unique = []
+    seen = set()
+    for finding in findings:
+        key = (finding.host, finding.port, finding.service, finding.issue,
+               finding.severity, finding.detail)
+        if key not in seen:
+            seen.add(key)
+            unique.append(finding)
+    return unique
+
+
 def targets_from_scan(path):
     """Read the open-port module's JSON output and pick out services we can test."""
     with open(path) as handle:
@@ -366,7 +436,7 @@ def targets_from_scan(path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Inadequate-authentication checks")
+    parser = argparse.ArgumentParser(description="IoT port scan and authentication checks")
     parser.add_argument("--target", action="append", default=[], metavar="HOST:PORT:SERVICE")
     parser.add_argument("--scan", action="append", default=[], metavar="HOST",
                         help="scan this host for open ports, then auth-check what is found")
@@ -374,6 +444,14 @@ def main():
     parser.add_argument("--ports", metavar="LIST", help="comma-separated ports (default: common IoT ports)")
     parser.add_argument("--from-scan", metavar="FILE", help="JSON output of the open-port module")
     parser.add_argument("--out", metavar="FILE", help="save findings as JSON")
+    parser.add_argument("--node-map", metavar="FILE", help="JSON mapping scanned hosts to sensor node IDs")
+    parser.add_argument("--write-db", action="store_true",
+                        help="score a full --scan and upsert scores into device_risk")
+    parser.add_argument("--mysql-host", default=os.environ.get("MYSQL_HOST", "localhost"))
+    parser.add_argument("--mysql-port", type=int, default=int(os.environ.get("MYSQL_PORT", "3306")))
+    parser.add_argument("--mysql-user", default=os.environ.get("MYSQL_USER", "sensor"))
+    parser.add_argument("--mysql-db", default=os.environ.get("MYSQL_DATABASE", "sensors"))
+    parser.add_argument("--mysql-ssl-ca", default=os.environ.get("MYSQL_SSL_CA"))
     args = parser.parse_args()
 
     targets = []
@@ -386,13 +464,38 @@ def main():
         targets.extend(targets_from_scan(args.from_scan))
     if not targets and not args.scan:
         parser.error("give at least one --scan, --target or --from-scan")
+    if args.write_db and not args.scan:
+        parser.error("--write-db requires a full --scan")
+    if args.write_db and (args.target or args.from_scan):
+        parser.error("--write-db cannot be combined with --target or --from-scan")
+    if args.write_db and not args.node_map:
+        parser.error("--write-db requires --node-map")
 
-    findings = run_checks(targets)
+    node_map = {}
+    if args.node_map:
+        try:
+            node_map = load_node_map(args.node_map)
+        except (OSError, ValueError) as err:
+            parser.error(f"cannot load node map: {err}")
+    if args.write_db:
+        missing = sorted(set(args.scan) - node_map.keys())
+        if missing:
+            parser.error("node map is missing scanned host(s): " + ", ".join(missing))
+
+    scanned_hosts = []
+    scan_auth_targets = []
+    scan_findings = []
     if args.scan:
         allowlist = load_allowlist(args.allowlist) if args.allowlist else {}
         ports = [int(p) for p in args.ports.split(",")] if args.ports else None
-        findings = sorted(findings + scan_and_check(args.scan, allowlist, ports),
-                          key=lambda f: SEVERITY_ORDER[f.severity])
+        scan_findings, scanned_hosts = scan_hosts(
+            args.scan, allowlist, ports, auth_targets=scan_auth_targets
+        )
+    targets.extend(scan_auth_targets)
+    findings = run_checks(list(dict.fromkeys(targets)))
+    findings.extend(scan_findings)
+    findings = deduplicate_findings(findings)
+    findings.sort(key=lambda f: SEVERITY_ORDER[f.severity])
     for f in findings:
         print(f"[{f.severity:8}] {f.host}:{f.port} {f.service:6} {f.issue} - {f.detail}")
     if not findings:
@@ -400,6 +503,18 @@ def main():
     if args.out:
         with open(args.out, "w") as handle:
             json.dump([asdict(f) for f in findings], handle, indent=2)
+    if args.write_db:
+        if not scanned_hosts:
+            print("No hosts completed a scan; no risk scores written.")
+            return
+        import risk_writer
+
+        scores = score_hosts(scanned_hosts, findings, node_map)
+        risk_writer.write_scores(risk_writer.cfg_from_env(args), scores)
+        for node_id in sorted(scores):
+            score = scores[node_id]
+            print(f"[RISK {score.severity:8}] {node_id}: {score.score:g} points")
+        print(f"Wrote {len(scores)} risk score(s) to {args.mysql_db}.device_risk")
 
 
 if __name__ == "__main__":

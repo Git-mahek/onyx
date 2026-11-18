@@ -15,19 +15,12 @@ import time
 from collections import defaultdict, deque
 
 from flask import Flask, jsonify, request, session, send_from_directory
-from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.security import check_password_hash
 
 import db
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(32))
-
-# Same two demo accounts as before, but the password now lives only as a
-# hash, never as plaintext anywhere a browser can read it.
-USERS = {
-    "admin": {"hash": generate_password_hash("onyx-admin"), "role": "admin"},
-    "viewer": {"hash": generate_password_hash("onyx-viewer"), "role": "viewer"},
-}
 
 # Server-side lockout: 5 failed attempts per 5 minutes, PER USERNAME - the
 # UI already claimed this; now it's actually enforced, not just decorative.
@@ -58,11 +51,22 @@ def login():
     if _locked_out(username):
         return jsonify(error="Too many failed attempts. Try again later."), 429
 
-    user = USERS.get(username)
-    if not user or not check_password_hash(user["hash"], password):
+    try:
+        conn = db.connect()
+        try:
+            user = db.fetch_user(conn, username)
+        finally:
+            conn.close()
+    except db.pymysql.MySQLError:
+        app.logger.exception("could not look up user during login")
+        return jsonify(error="Login service is temporarily unavailable."), 503
+
+    if not user or not check_password_hash(user["password_hash"], password):
         _record_failure(username)
         return jsonify(error="Wrong username or password."), 401
 
+    _failed_logins.pop(username, None)
+    session.clear()
     session["username"] = username
     session["role"] = user["role"]
     return jsonify(username=username, role=user["role"])

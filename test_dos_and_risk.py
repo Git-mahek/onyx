@@ -50,6 +50,29 @@ class RiskAggregationTests(unittest.TestCase):
         self.assertIn("COMBO", " ".join(result.explanation))
         self.assertIn(result.severity, ("HIGH", "CRITICAL"))
 
+    def test_unexpected_port_plus_default_creds_gets_combo_bonus_once(self):
+        findings = [
+            Finding("n1", 8080, "http", "Unexpected open port", "MEDIUM", ""),
+            Finding("n1", 8080, "http", "Default credentials accepted", "CRITICAL", ""),
+            Finding("n1", 8080, "telnet", "Telnet service is running", "HIGH", ""),
+        ]
+        result = score_device("n1", findings)
+        self.assertEqual(result.score, 27)  # 3 + 10 + 6 + one 8-point combo
+        self.assertEqual(sum("COMBO" in line for line in result.explanation), 1)
+
+    def test_score_hosts_maps_nodes_and_keeps_clean_hosts(self):
+        from risk_aggregation import score_hosts
+
+        finding = Finding("10.0.0.1", 80, "http", "No authentication required", "HIGH", "")
+        scores = score_hosts(
+            ["10.0.0.1", "10.0.0.2"],
+            [finding],
+            {"10.0.0.1": "node1", "10.0.0.2": "node2"},
+        )
+        self.assertEqual(set(scores), {"node1", "node2"})
+        self.assertEqual(scores["node1"].score, 6)
+        self.assertEqual(scores["node2"].score, 0)
+
     def test_no_findings_is_low_zero(self):
         result = score_device("n1", [])
         self.assertEqual(result.severity, "LOW")

@@ -44,3 +44,13 @@ CREATE TABLE IF NOT EXISTS device_risk (
   PRIMARY KEY (node_id),
   KEY idx_severity (severity)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- users: application login accounts. Passwords are stored as Werkzeug hashes.
+CREATE TABLE IF NOT EXISTS users (
+  username      VARCHAR(64)  NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  role          VARCHAR(16)  NOT NULL,
+  created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (username),
+  KEY idx_role (role)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

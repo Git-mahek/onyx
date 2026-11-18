@@ -124,9 +124,22 @@ def parse_message(topic, raw, received_at=None):
         raise ValueError("payload contains NaN or Infinity") from None
 
     kind, node = m.groups()
+    if len(node) > 32 or len(kind) > 16:
+        raise ValueError("topic sensor or node ID exceeds supported length")
+    payload_node = data.get("node_id")
+    payload_sensor = data.get("sensor")
+    if payload_node not in (None, "") and (
+        not isinstance(payload_node, str) or payload_node != node
+    ):
+        raise ValueError("payload node_id does not match MQTT topic")
+    if payload_sensor not in (None, "") and (
+        not isinstance(payload_sensor, str) or payload_sensor != kind
+    ):
+        raise ValueError("payload sensor does not match MQTT topic")
+
     return (
-        str(data.get("node_id") or node)[:32],
-        str(data.get("sensor") or kind)[:16],
+        node,
+        kind,
         topic[:128],
         _parse_ts(data.get("ts"), received_at.replace(microsecond=0)),
         received_at,

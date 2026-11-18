@@ -9,6 +9,7 @@ password only from MYSQL_PASSWORD, never hardcoded.
 import json
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pymysql
 
@@ -33,6 +34,31 @@ def connect(cfg=None):
     if cfg.get("ssl_ca"):
         kw["ssl"] = {"ca": cfg["ssl_ca"]}
     return pymysql.connect(**kw)
+
+
+def schema_statements():
+    sql = Path(__file__).with_name("schema.sql").read_text()
+    body = "\n".join(line for line in sql.splitlines() if not line.lstrip().startswith("--"))
+    return [statement.strip() for statement in body.split(";") if statement.strip()]
+
+
+def init_schema(cfg=None):
+    conn = connect(cfg)
+    try:
+        with conn.cursor() as cur:
+            for statement in schema_statements():
+                cur.execute(statement)
+    finally:
+        conn.close()
+
+
+def fetch_user(conn, username):
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT username, password_hash, role FROM users WHERE username = %s",
+            (username,),
+        )
+        return cur.fetchone()
 
 
 # ------------------------------------------------------------ sensor tags

@@ -1,7 +1,15 @@
 """Tests for auth_check.py. Run with:  python test_auth_check.py"""
 
+import http.server
+import io
 import socket
+import json
+import os
+import tempfile
+import threading
 import unittest
+from contextlib import redirect_stdout
+from unittest.mock import patch
 
 import auth_check
 import fake_targets
@@ -12,6 +20,29 @@ auth_check.SCAN_DELAY = 0
 
 def issues(findings):
     return {f.issue for f in findings}
+
+
+def start_redirect_http():
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/redirect":
+                self.send_response(302)
+                self.send_header("Location", "/public")
+                self.end_headers()
+            elif self.path == "/external":
+                self.send_response(302)
+                self.send_header("Location", "http://example.com/")
+                self.end_headers()
+            else:
+                self.send_response(204)
+                self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
 
 
 class HttpTests(unittest.TestCase):
@@ -31,6 +62,18 @@ class HttpTests(unittest.TestCase):
         found = auth_check.check_http("127.0.0.1", server.server_address[1])
         self.assertNotIn("Default credentials accepted", issues(found))
 
+    def test_successful_2xx_and_same_host_redirect_are_detected(self):
+        server = start_redirect_http()
+        for path in ("/", "/redirect"):
+            with self.subTest(path=path):
+                found = auth_check.check_http("127.0.0.1", server.server_address[1], path)
+                self.assertIn("No authentication required", issues(found))
+
+    def test_external_redirect_is_not_followed_or_reported_as_open(self):
+        server = start_redirect_http()
+        found = auth_check.check_http("127.0.0.1", server.server_address[1], "/external")
+        self.assertNotIn("No authentication required", issues(found))
+
 
 class MqttTests(unittest.TestCase):
     def test_anonymous(self):
@@ -47,6 +90,26 @@ class MqttTests(unittest.TestCase):
         server = fake_targets.start_mqtt(creds=("sensor1", "Xk9#vQ2!mLp7"))
         found = auth_check.check_mqtt("127.0.0.1", server.server_address[1])
         self.assertEqual(issues(found), set())  # non-1883 port, no findings
+
+    def test_fragmented_connack_is_read_completely(self):
+        class FragmentedSocket:
+            def __init__(self):
+                self.parts = iter((b"\x20", b"\x02", b"\x00", b"\x00"))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def sendall(self, data):
+                pass
+
+            def recv(self, size):
+                return next(self.parts, b"")
+
+        with patch("auth_check.socket.create_connection", return_value=FragmentedSocket()):
+            self.assertEqual(auth_check._mqtt_connect("127.0.0.1", 1883), 0)
 
 
 class TelnetTests(unittest.TestCase):
@@ -127,6 +190,47 @@ class ScanTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             auth_check.scan_ports("8.8.8.8", [80])
         self.assertEqual(auth_check.scan_and_check(["8.8.8.8"], {}, [80]), [])
+
+    def test_cli_writes_scores_for_full_scans(self):
+        host = "127.0.0.1"
+        findings = [auth_check.Finding(host, 8080, "http", "Unexpected open port", "MEDIUM", "")]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            node_map_path = os.path.join(temp_dir, "node-map.json")
+            with open(node_map_path, "w") as handle:
+                json.dump({host: "node1"}, handle)
+            with patch("sys.argv", [
+                "auth_check.py", "--scan", host, "--node-map", node_map_path, "--write-db"
+            ]), patch.object(auth_check, "scan_hosts", return_value=(findings, [host])), \
+                    patch("risk_writer.write_scores") as write_scores:
+                auth_check.main()
+        written_scores = write_scores.call_args.args[1]
+        self.assertEqual(set(written_scores), {"node1"})
+        self.assertEqual(written_scores["node1"].score, 3)
+
+    def test_cli_deduplicates_findings_from_target_and_scan(self):
+        host = "127.0.0.1"
+        finding = auth_check.Finding(
+            host, 8080, "http", "No authentication required", "HIGH", "public endpoint"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = os.path.join(temp_dir, "findings.json")
+            def fake_scan(hosts, allowlist=None, ports=None, auth_targets=None):
+                auth_targets.append((host, 8080, "http"))
+                return [finding], [host]
+
+            with patch("sys.argv", [
+                "auth_check.py", "--target", f"{host}:8080:http",
+                "--scan", host, "--out", output_path,
+            ]), patch.object(auth_check, "run_checks", return_value=[finding]) as run_checks, \
+                    patch.object(auth_check, "scan_hosts", side_effect=fake_scan):
+                with redirect_stdout(io.StringIO()) as output:
+                    auth_check.main()
+
+            with open(output_path) as handle:
+                saved_findings = json.load(handle)
+        run_checks.assert_called_once_with([(host, 8080, "http")])
+        self.assertEqual(len(saved_findings), 1)
+        self.assertEqual(output.getvalue().count("No authentication required"), 1)
 
 
 class GuardTests(unittest.TestCase):

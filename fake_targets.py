@@ -119,4 +119,3 @@ if __name__ == "__main__":
     print("Fake targets running: http 18080, mqtt 11883, telnet 12323 (Ctrl+C to stop)")
     while True:
         time.sleep(1)
-
